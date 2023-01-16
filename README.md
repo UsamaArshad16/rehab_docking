@@ -6,7 +6,7 @@ It follows four steps strategy:
 * Rotate 180 degree
 * Move backward untill the robot is docked (backwards motion is based upon the lidar's backward distance)
 
-## Instalation
+## Installation
 ### ar_track_alvar
 This package detects the Artag. To install this, you need to go into your workspace using\
 ```cd catkin_ws/src/```\
@@ -28,8 +28,8 @@ Build these packages\
 ```roslaunch rehab_bringup rehab_bringup.launch```
 ### 2. rehab_navigation
 open another terminal\
-```roslaunch rehab_navigation rehab_navigation.launch```
-localize properly\
+```roslaunch rehab_navigation rehab_navigation.launch```\
+localize properly
 ### 3. realsense_ros
 open another terminal\
 ```roslaunch realsense2_camera rs_camera.launch```
