@@ -1,6 +1,6 @@
 # rehab_docking
 This is responsible for the auto docking of the robot.\
-It follows four steps stategy:
+It follows four steps strategy:
 * Navigate to a point in front of docking station using navigation stack
 * Move towards Artag using the camera and stop at certain distance
 * Rotate 180 degree
