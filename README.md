@@ -41,4 +41,4 @@ You also need to specify your tag/marker size in the pr2_indiv_no_kinect.launch 
 open another terminal\
 ```rosrun rehab_docking ar_auto_docking.py```
 
-## Watch the peaceful docking and enjoy
+## Watch the Smoooth docking and enjoy
