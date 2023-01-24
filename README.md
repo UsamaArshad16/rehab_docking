@@ -36,7 +36,13 @@ open another terminal\
 ### 4. ar_track_alvar
 open another terminal\
 ```roslaunch ar_track_alvar pr2_indiv_no_kinect.launch```\
-You also need to specify your tag/marker size in the pr2_indiv_no_kinect.launch launch file.
+You also need to specify your tag/marker size and topics in the pr2_indiv_no_kinect.launch file.\
+so you can set the args like this in launch file\
+	```<arg name="marker_size" default="15" />```\
+	```<arg name="cam_image_topic" default="/camera/color/image_raw" />```\
+	```<arg name="cam_info_topic" default="/camera/color/camera_info" />```\
+	```<arg name="output_frame" default="/camera_link" />```
+
 ### 5. rehab_docking
 open another terminal\
 ```rosrun rehab_docking ar_auto_docking.py```
