@@ -1,21 +1,21 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import rospy
 import geometry_msgs.msg
 from geometry_msgs.msg import Twist
-from geometry_msgs.msg import Pose
-from ar_track_alvar_msgs.msg import AlvarMarkers
+from geometry_msgs.msg import Pose, PoseStamped
 import numpy as np
 import numpy
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
 from nav_msgs.msg import Odometry
-import tf2_msgs.msg
 import math
-import tf2_ros
-import tf
 import actionlib
 from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal, MoveBaseFeedback, MoveBaseResult
+from actionlib_msgs.msg import GoalStatus
 from sensor_msgs.msg import LaserScan
+from std_msgs.msg import String
+from math import pow, atan2, sqrt
+from sensor_msgs.msg import JointState
 
 target = Pose()
 target.position.x = 0
@@ -24,22 +24,19 @@ target.position.y = 0
 robot_x = robot_y = robot_yaw =  0
 marker_pose  = marker_y = marker_yaw =  0
 marker_x = 0
-def visual_callback(ar_markers):
-    global marker_x, marker_y, marker_yaw
+marker_id1 = "not_in_frame"
+def visual_callback(msg):
+    global marker_x, marker_y, marker_yaw, marker_id1
     try:
-        for i in range(len(ar_markers.markers)):
-            if (ar_markers.markers[i-1].id == 1):
-                marker_x = ar_markers.markers[i-1].pose.pose.position.x
-                marker_y = ar_markers.markers[i-1].pose.pose.position.y
-                marker_quaternion = [ar_markers.markers[i-1].pose.pose.orientation.x, ar_markers.markers[i-1].pose.pose.orientation.y, ar_markers.markers[i-1].pose.pose.orientation.z, ar_markers.markers[i-1].pose.pose.orientation.w]
-                marker_euler = euler_from_quaternion(marker_quaternion)
-                marker_yaw = marker_euler[2]+np.pi/2
-            else:
-                #print("marker 1 not detected")
-                x = 0
+        marker_x = msg.pose.position.x
+        marker_y = msg.pose.position.y
+        marker_quaternion = [msg.pose.orientation.x, msg.pose.orientation.y, msg.pose.orientation.z, msg.pose.orientation.w]
+        marker_euler = euler_from_quaternion(marker_quaternion)
+        marker_yaw = marker_euler[2]+np.pi/2
+        marker_id1 = "in_frame"
     except:
-        llll = 0
-        print("marker not in frame")
+        marker_id1 = "not_in_frame"
+        print("marker 1 not detected")
 
 def odom_callback(odom):
     global robot_x, robot_y, robot_yaw
@@ -49,9 +46,6 @@ def odom_callback(odom):
     robot_euler = euler_from_quaternion(robot_quaternion)
     robot_yaw = robot_euler[2]
 
-def target_callback(tar):
-    global target
-    target = tar
 
 def getRangeWithAngles(data, fromIndex, toIndex, fromIndex2 = None, toIndex2 = None):
     """ Extracts scan data within a specific angle range. Returns two 
@@ -156,16 +150,20 @@ def scanCallback(data):
     # msg.angle_front_min = minAngleFront
     # msg.angle_back_min = minAngleBack
 
+        
 twist = Twist()
-rospy.init_node('AR_AUTO_DOCKING', anonymous=True)
-pub = rospy.Publisher('/mobile_base_controller/cmd_vel', Twist, queue_size=10)
-target_pose_sub = rospy.Subscriber('/target_pose', Pose, target_callback)
-rospy.Subscriber('/ar_pose_marker', AlvarMarkers, visual_callback)
-odom_sub = rospy.Subscriber('/mobile_base_controller/odom', Odometry, odom_callback)
-rospy.Subscriber("/scan", LaserScan, scanCallback)
-rospy.sleep(1)
 
-def navigate(x,y):
+navigation_status = "False"
+def navigation_callback(status, result):
+    global navigation_status
+    if status == GoalStatus.SUCCEEDED:
+        navigation_status = "True"
+        rospy.loginfo("Navigation succeeded!")
+    else:
+        navigation_status = "False"
+        rospy.logwarn("Navigation failed with status: " + str(status))
+
+def navigate(x,y,th,w):
     client = actionlib.SimpleActionClient('move_base', MoveBaseAction)
     rospy.loginfo("Waiting for move base server")
     client.wait_for_server()
@@ -174,20 +172,16 @@ def navigate(x,y):
     goal.target_pose.header.frame_id = 'map' 
     goal.target_pose.pose.position.x = x
     goal.target_pose.pose.position.y = y
-    ##print(target.position.x, target.position.y)
-    goal.target_pose.pose.orientation.z = 0.840404040318
-    goal.target_pose.pose.orientation.w = 0.541960375873
-
-    client.send_goal(goal)
+    goal.target_pose.pose.orientation.z = th
+    goal.target_pose.pose.orientation.w = w
+    rospy.loginfo("server is up")
+    client.send_goal(goal,done_cb=navigation_callback)
     client.wait_for_result()
 
 
-
-align = 0
 def auto_dock_basic():
-    global align
-    if (marker_x > 0.4 and minValueFront > 0.3):
-        print(marker_x, marker_y)
+    if (marker_x > 0.6 and minValueFront > 0.3):
+        #print(marker_x, marker_y)
         ##print( marker_y)
         if marker_y>=0.01:
             #print ("Moving +ive")
@@ -207,88 +201,90 @@ def auto_dock_basic():
             pub.publish(twist)
         rospy.sleep(0.1)
 
-    elif marker_x < 0.4:
-        #print("fak", marker_x)
-        align = 1
-        print("j", marker_x, align)
+    elif marker_x < 0.6:
+        #print("j", marker_x)
         twist.linear.x = 0
         twist.angular.z = 0
         pub.publish(twist)
     else:
         twist.linear.x = 0
         twist.angular.z = 0
-        #pub.publish(twist)
-
-
-real_yaw = 0
-last_yaw = robot_yaw
-d = [0,0]
-def absolute_pose():
-    global real_yaw
-    del d[0]
-    d.append(robot_yaw)
-    if (robot_yaw<0):
-        f =  d[1]-d[0] 
-        if (abs(f)>3):
-            f = d[1]+d[0]
-        real_yaw = real_yaw + f
-    else:
-        f = d[1]-d[0]
-        if (abs(f)>3):
-            f = d[1]+d[0]
-        real_yaw = real_yaw + f
-    return real_yaw
-
-# tolerane = 0.01
-# def pose_reach():
-#     if absolute_pose()<0:
-
-
-tolerane = 0.03
-def rotate(a):
-    #global last_yaw
-    last_yaw = robot_yaw
-    if a >= 0:
-        while((absolute_pose()-last_yaw-a) < -tolerane and not rospy.is_shutdown()): ##sign gets change and it goes again positive, So tolerance is a little big
-            twist.angular.z = 0.2
-            pub.publish(twist)
-            #print((absolute_pose()-last_yaw-a)*180/math.pi, (absolute_pose()-last_yaw)*180/math.pi, absolute_pose()*180/math.pi, "1")
-            #print((absolute_pose()-last_yaw-a)*180/math.pi,robot_yaw)
-            rospy.sleep(0.1)
-        #print("done")
-        twist.linear.x = 0.0
-        twist.angular.z = 0.0
         pub.publish(twist)
 
-    elif a <= 0:
-        while((absolute_pose()-last_yaw-a) > tolerane and not rospy.is_shutdown()):
-            twist.angular.z = -0.2
-            pub.publish(twist)
-            #print((absolute_pose()-last_yaw-a)*180/math.pi, (absolute_pose()-last_yaw)*180/math.pi,absolute_pose()*180/math.pi, "2")
-            #print((absolute_pose()-last_yaw-a)*180/math.pi,robot_yaw)
-            rospy.sleep(0.1)
-        #print("done")
+
+
+def jointState_callback(data):
+    global joint_angles
+    joint_angles = data.position
+
+wheel_value_180 = 6.22
+def rotate():
+    last_wheel_value = joint_angles[0]
+    while(abs(joint_angles[0]-last_wheel_value) < wheel_value_180 and not rospy.is_shutdown()):
+        twist.angular.z = 0.2
         twist.linear.x = 0.0
-        twist.angular.z = 0.0
         pub.publish(twist)
+        rospy.sleep(0.1)
+    twist.linear.x = 0.0
+    twist.angular.z = 0.0
+    pub.publish(twist)
 
 
 def last_stop():
-    while(minValueBack > 0.35 and not rospy.is_shutdown()):
+    while(minValueBack > 0.45 and not rospy.is_shutdown()):
         twist.linear.x = -0.05
         pub.publish(twist)
         rospy.sleep(0.1)
     twist.linear.x = 0.0
     twist.angular.z = 0.0
     pub.publish(twist)
-    rospy.signal_shutdown("docking_done")
 
+def dock():
+    print("docking called")
+    navigate(-1.190, 2.042, 0.315, 0.949) 
+    rospy.sleep(1)
+    if marker_id1 == "in_frame" and navigation_status == "True":
+    #if marker_id1 == "in_frame":
+        while(marker_x > 0.6 and not rospy.is_shutdown()):
+            auto_dock_basic()
+            rospy.sleep(0.1)
+        rotate()
+        last_stop()
+    else:
+        print("AR tag is not in the frame")
 
+def undock():
+    last_x = robot_x
+    last_y = robot_y
+    move_distance = 0.3
 
-navigate(0.961, 0.648)
-while not rospy.is_shutdown():
-    auto_dock_basic()
-    if marker_x < 0.4 and align ==1:
-         rotate(3.02)
-         last_stop()
-    rospy.sleep(0.1)
+    while(sqrt(pow((robot_x - last_x), 2) + pow((robot_y - last_y), 2)) < move_distance and not rospy.is_shutdown()):
+        twist.linear.x = 0.1
+        twist.angular.z = 0.0
+        pub.publish(twist)
+        rospy.sleep(0.1)
+    twist.linear.x = 0.0
+    twist.angular.z = 0.0
+    pub.publish(twist)
+
+def docking_callback(data):
+    message = data.data
+    message_list = message.split(",")
+    status = message_list[1]
+    #print("Status: ", status)
+    if status == "dock":
+        dock()
+    elif status == "undock":
+        undock()
+        rospy.set_param('/start_navigation', True)
+
+if __name__ == '__main__':
+    # Initialize the ROS node with the name 'sound_direction_pan'
+    rospy.init_node('dock_undock')
+    pub = rospy.Publisher('/mobile_base_controller/cmd_vel', Twist, queue_size=10)
+    rospy.Subscriber("/aruco_single/pose", PoseStamped, visual_callback)
+    odom_sub = rospy.Subscriber('/mobile_base_controller/odom', Odometry, odom_callback)
+    rospy.Subscriber("/scan", LaserScan, scanCallback)
+    rospy.Subscriber("/cmd_frm_tablet", String, docking_callback)
+    rospy.Subscriber("/measured_joint_states", JointState, jointState_callback)
+    rospy.spin()
